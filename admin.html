@@ -3,10 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>لوحة الإدارة - تحديث الأسئلة</title>
+    <title>لوحة الإدارة - نشر الأسئلة</title>
     <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
     <style>
-        /* نفس التنسيقات السابقة مع إضافة حقول الإعدادات */
         :root {
             --primary: #4f46e5;
             --primary-dark: #4338ca;
@@ -43,26 +42,6 @@
             color: var(--primary-dark);
             font-size: 2rem;
             margin-bottom: 20px;
-        }
-        .settings {
-            background: #f8fafc;
-            padding: 20px;
-            border-radius: var(--radius);
-            margin-bottom: 20px;
-            display: flex;
-            flex-direction: column;
-            gap: 10px;
-        }
-        .settings label {
-            font-weight: 600;
-            color: var(--text);
-        }
-        .settings input, .settings textarea {
-            padding: 10px;
-            border: 1px solid #cbd5e1;
-            border-radius: 8px;
-            font-size: 16px;
-            width: 100%;
         }
         .toolbar {
             display: flex;
@@ -142,18 +121,6 @@
 <body>
     <div class="container">
         <h1>📥 لوحة إدارة الأسئلة</h1>
-        <div class="settings">
-            <label>مالك المستودع (Owner)</label>
-            <input type="text" id="repoOwner" placeholder="مثال: username">
-            <label>اسم المستودع (Repo)</label>
-            <input type="text" id="repoName" placeholder="مثال: my-faq">
-            <label>اسم الفرع (Branch)</label>
-            <input type="text" id="branch" value="main">
-            <label>رمز الوصول GitHub Token</label>
-            <input type="password" id="githubToken" placeholder="ghp_...">
-            <small style="color: #64748b;">يجب أن يملك الرمز صلاحية الكتابة إلى المستودع (repo).</small>
-            <button id="saveConfigBtn" class="success">💾 حفظ الإعدادات</button>
-        </div>
         <div class="toolbar">
             <button id="importBtn">📥 استيراد ملف إكسل</button>
             <button id="publishBtn" class="success">🚀 نشر إلى GitHub</button>
@@ -164,30 +131,13 @@
     </div>
 
     <script>
-        let qaData = [];
-        // تحميل الإعدادات من localStorage
-        let config = {
-            owner: localStorage.getItem('gh_owner') || '',
-            repo: localStorage.getItem('gh_repo') || '',
-            branch: localStorage.getItem('gh_branch') || 'main',
-            token: localStorage.getItem('gh_token') || ''
-        };
-        document.getElementById('repoOwner').value = config.owner;
-        document.getElementById('repoName').value = config.repo;
-        document.getElementById('branch').value = config.branch;
-        document.getElementById('githubToken').value = config.token;
+        // ========== بيانات GitHub مدمجة ==========
+        const OWNER = 'suhaipmahmoud190-maker';
+        const REPO = 'q';
+        const BRANCH = 'main';
+        const TOKEN = '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'; // ⚠️ استبدل هذا التوكن بآخر جديد، ولا تشاركه
 
-        document.getElementById('saveConfigBtn').addEventListener('click', () => {
-            config.owner = document.getElementById('repoOwner').value.trim();
-            config.repo = document.getElementById('repoName').value.trim();
-            config.branch = document.getElementById('branch').value.trim();
-            config.token = document.getElementById('githubToken').value.trim();
-            localStorage.setItem('gh_owner', config.owner);
-            localStorage.setItem('gh_repo', config.repo);
-            localStorage.setItem('gh_branch', config.branch);
-            localStorage.setItem('gh_token', config.token);
-            alert('تم حفظ الإعدادات.');
-        });
+        let qaData = [];
 
         function renderQAGrid() {
             const grid = document.getElementById('qaGrid');
@@ -241,49 +191,42 @@
         }
 
         async function publishToGitHub() {
-            if (!config.owner || !config.repo || !config.token) {
-                alert('الرجاء إدخال جميع بيانات المستودع والرمز أولاً.');
-                return;
-            }
             if (qaData.length === 0) {
                 alert('لا توجد أسئلة للنشر.');
                 return;
             }
             const content = JSON.stringify(qaData, null, 2);
             const base64Content = btoa(unescape(encodeURIComponent(content)));
-            const url = `https://api.github.com/repos/${config.owner}/${config.repo}/contents/questions.json`;
+            const url = `https://api.github.com/repos/${OWNER}/${REPO}/contents/questions.json`;
+
+            // الحصول على SHA للملف إن كان موجوداً
+            let sha = null;
+            try {
+                const getResp = await fetch(url, {
+                    headers: { 'Authorization': `token ${TOKEN}` }
+                });
+                if (getResp.ok) {
+                    const getData = await getResp.json();
+                    sha = getData.sha;
+                }
+            } catch (e) {}
+
             const body = {
-                message: 'Update questions.json via admin page',
+                message: 'Update questions.json',
                 content: base64Content,
-                branch: config.branch
+                branch: BRANCH
             };
+            if (sha) body.sha = sha;
 
             try {
-                // محاولة الحصول على SHA للملف الموجود (إن وجد) لتحديثه بدلاً من إنشائه
-                let existingSha = null;
-                try {
-                    const getResp = await fetch(url, {
-                        headers: { 'Authorization': `token ${config.token}` }
-                    });
-                    if (getResp.ok) {
-                        const getData = await getResp.json();
-                        existingSha = getData.sha;
-                    }
-                } catch (e) {}
-
-                if (existingSha) {
-                    body.sha = existingSha;
-                }
-
                 const response = await fetch(url, {
                     method: 'PUT',
                     headers: {
-                        'Authorization': `token ${config.token}`,
+                        'Authorization': `token ${TOKEN}`,
                         'Content-Type': 'application/json'
                     },
                     body: JSON.stringify(body)
                 });
-
                 if (response.ok) {
                     alert('تم نشر الأسئلة بنجاح! ستظهر في واجهة المستخدم خلال لحظات.');
                 } else {
@@ -292,7 +235,7 @@
                 }
             } catch (error) {
                 console.error(error);
-                alert('حدث خطأ أثناء النشر. تحقق من الرمز والاتصال.');
+                alert('حدث خطأ أثناء النشر.');
             }
         }
 

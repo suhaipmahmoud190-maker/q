@@ -1,0 +1,315 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>لوحة الإدارة - تحديث الأسئلة</title>
+    <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
+    <style>
+        /* نفس التنسيقات السابقة مع إضافة حقول الإعدادات */
+        :root {
+            --primary: #4f46e5;
+            --primary-dark: #4338ca;
+            --success: #10b981;
+            --danger: #ef4444;
+            --bg: #f0f4ff;
+            --card-bg: #ffffff;
+            --text: #1e293b;
+            --shadow: 0 10px 30px rgba(0,0,0,0.1);
+            --radius: 16px;
+            --transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+        body {
+            background: linear-gradient(135deg, #e0e7ff, #c7d2fe, #a5b4fc);
+            min-height: 100vh;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        .container {
+            width: 100%;
+            max-width: 900px;
+            background: rgba(255,255,255,0.8);
+            backdrop-filter: blur(10px);
+            border-radius: 30px;
+            box-shadow: var(--shadow);
+            padding: 30px;
+            margin-top: 20px;
+        }
+        h1 {
+            text-align: center;
+            color: var(--primary-dark);
+            font-size: 2rem;
+            margin-bottom: 20px;
+        }
+        .settings {
+            background: #f8fafc;
+            padding: 20px;
+            border-radius: var(--radius);
+            margin-bottom: 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+        .settings label {
+            font-weight: 600;
+            color: var(--text);
+        }
+        .settings input, .settings textarea {
+            padding: 10px;
+            border: 1px solid #cbd5e1;
+            border-radius: 8px;
+            font-size: 16px;
+            width: 100%;
+        }
+        .toolbar {
+            display: flex;
+            gap: 15px;
+            justify-content: center;
+            margin: 20px 0;
+            flex-wrap: wrap;
+        }
+        .toolbar button {
+            background: var(--primary);
+            color: white;
+            border: none;
+            padding: 12px 25px;
+            border-radius: 30px;
+            cursor: pointer;
+            font-size: 16px;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            transition: var(--transition);
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+        .toolbar button:hover {
+            background: var(--primary-dark);
+            transform: translateY(-2px);
+            box-shadow: 0 6px 12px rgba(0,0,0,0.15);
+        }
+        .toolbar button.success { background: var(--success); }
+        .toolbar button.danger { background: var(--danger); }
+        #fileInput { display: none; }
+        .qa-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+            gap: 15px;
+            margin-top: 20px;
+        }
+        .qa-card {
+            background: var(--card-bg);
+            border-radius: var(--radius);
+            padding: 20px;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.08);
+            cursor: pointer;
+            transition: var(--transition);
+            border: 2px solid transparent;
+            position: relative;
+            overflow: hidden;
+        }
+        .qa-card:hover {
+            transform: translateY(-5px) scale(1.02);
+            box-shadow: 0 15px 30px rgba(0,0,0,0.15);
+            border-color: var(--primary);
+        }
+        .qa-card .question-text {
+            font-weight: 700;
+            color: var(--text);
+            font-size: 1.1rem;
+            margin-bottom: 5px;
+            line-height: 1.4;
+        }
+        .qa-card .hint {
+            font-size: 0.8rem;
+            color: #64748b;
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+        .empty-message {
+            text-align: center;
+            color: #64748b;
+            padding: 40px 20px;
+            font-size: 1.2rem;
+            grid-column: 1 / -1;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>📥 لوحة إدارة الأسئلة</h1>
+        <div class="settings">
+            <label>مالك المستودع (Owner)</label>
+            <input type="text" id="repoOwner" placeholder="مثال: username">
+            <label>اسم المستودع (Repo)</label>
+            <input type="text" id="repoName" placeholder="مثال: my-faq">
+            <label>اسم الفرع (Branch)</label>
+            <input type="text" id="branch" value="main">
+            <label>رمز الوصول GitHub Token</label>
+            <input type="password" id="githubToken" placeholder="ghp_...">
+            <small style="color: #64748b;">يجب أن يملك الرمز صلاحية الكتابة إلى المستودع (repo).</small>
+            <button id="saveConfigBtn" class="success">💾 حفظ الإعدادات</button>
+        </div>
+        <div class="toolbar">
+            <button id="importBtn">📥 استيراد ملف إكسل</button>
+            <button id="publishBtn" class="success">🚀 نشر إلى GitHub</button>
+            <button id="clearBtn" class="danger">🗑️ مسح الكل</button>
+        </div>
+        <input type="file" id="fileInput" accept=".csv,.xlsx,.xls">
+        <div class="qa-grid" id="qaGrid"></div>
+    </div>
+
+    <script>
+        let qaData = [];
+        // تحميل الإعدادات من localStorage
+        let config = {
+            owner: localStorage.getItem('gh_owner') || '',
+            repo: localStorage.getItem('gh_repo') || '',
+            branch: localStorage.getItem('gh_branch') || 'main',
+            token: localStorage.getItem('gh_token') || ''
+        };
+        document.getElementById('repoOwner').value = config.owner;
+        document.getElementById('repoName').value = config.repo;
+        document.getElementById('branch').value = config.branch;
+        document.getElementById('githubToken').value = config.token;
+
+        document.getElementById('saveConfigBtn').addEventListener('click', () => {
+            config.owner = document.getElementById('repoOwner').value.trim();
+            config.repo = document.getElementById('repoName').value.trim();
+            config.branch = document.getElementById('branch').value.trim();
+            config.token = document.getElementById('githubToken').value.trim();
+            localStorage.setItem('gh_owner', config.owner);
+            localStorage.setItem('gh_repo', config.repo);
+            localStorage.setItem('gh_branch', config.branch);
+            localStorage.setItem('gh_token', config.token);
+            alert('تم حفظ الإعدادات.');
+        });
+
+        function renderQAGrid() {
+            const grid = document.getElementById('qaGrid');
+            grid.innerHTML = '';
+            if (qaData.length === 0) {
+                grid.innerHTML = '<div class="empty-message">لا توجد أسئلة. استورد ملف إكسل أولاً.</div>';
+                return;
+            }
+            qaData.forEach(item => {
+                const card = document.createElement('div');
+                card.className = 'qa-card';
+                card.innerHTML = `
+                    <div class="question-text">${item.question}</div>
+                    <div class="hint">👆 اضغط لعرض الجواب</div>
+                `;
+                card.addEventListener('click', () => alert(item.answer));
+                grid.appendChild(card);
+            });
+        }
+
+        function handleFileImport(file) {
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                try {
+                    const data = new Uint8Array(e.target.result);
+                    const workbook = XLSX.read(data, { type: 'array' });
+                    const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+                    const jsonData = XLSX.utils.sheet_to_json(firstSheet, { header: 1 });
+                    let imported = [];
+                    for (let i = 0; i < jsonData.length; i++) {
+                        const row = jsonData[i];
+                        if (row && row.length >= 2) {
+                            const q = String(row[0]).trim();
+                            const a = String(row[1]).trim();
+                            if (q && a) imported.push({ question: q, answer: a });
+                        }
+                    }
+                    if (imported.length > 0) {
+                        qaData = imported;
+                        renderQAGrid();
+                        alert(`تم استيراد ${imported.length} سؤال وجواب. اضغط "نشر إلى GitHub" لرفعها.`);
+                    } else {
+                        alert('لا توجد بيانات صالحة.');
+                    }
+                } catch (err) {
+                    console.error(err);
+                    alert('حدث خطأ في قراءة الملف.');
+                }
+            };
+            reader.readAsArrayBuffer(file);
+        }
+
+        async function publishToGitHub() {
+            if (!config.owner || !config.repo || !config.token) {
+                alert('الرجاء إدخال جميع بيانات المستودع والرمز أولاً.');
+                return;
+            }
+            if (qaData.length === 0) {
+                alert('لا توجد أسئلة للنشر.');
+                return;
+            }
+            const content = JSON.stringify(qaData, null, 2);
+            const base64Content = btoa(unescape(encodeURIComponent(content)));
+            const url = `https://api.github.com/repos/${config.owner}/${config.repo}/contents/questions.json`;
+            const body = {
+                message: 'Update questions.json via admin page',
+                content: base64Content,
+                branch: config.branch
+            };
+
+            try {
+                // محاولة الحصول على SHA للملف الموجود (إن وجد) لتحديثه بدلاً من إنشائه
+                let existingSha = null;
+                try {
+                    const getResp = await fetch(url, {
+                        headers: { 'Authorization': `token ${config.token}` }
+                    });
+                    if (getResp.ok) {
+                        const getData = await getResp.json();
+                        existingSha = getData.sha;
+                    }
+                } catch (e) {}
+
+                if (existingSha) {
+                    body.sha = existingSha;
+                }
+
+                const response = await fetch(url, {
+                    method: 'PUT',
+                    headers: {
+                        'Authorization': `token ${config.token}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(body)
+                });
+
+                if (response.ok) {
+                    alert('تم نشر الأسئلة بنجاح! ستظهر في واجهة المستخدم خلال لحظات.');
+                } else {
+                    const errorData = await response.json();
+                    alert(`فشل النشر: ${errorData.message}`);
+                }
+            } catch (error) {
+                console.error(error);
+                alert('حدث خطأ أثناء النشر. تحقق من الرمز والاتصال.');
+            }
+        }
+
+        document.getElementById('importBtn').addEventListener('click', () => document.getElementById('fileInput').click());
+        document.getElementById('fileInput').addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (file) { handleFileImport(file); e.target.value = ''; }
+        });
+        document.getElementById('publishBtn').addEventListener('click', publishToGitHub);
+        document.getElementById('clearBtn').addEventListener('click', () => {
+            if (confirm('مسح جميع الأسئلة من الشاشة؟')) {
+                qaData = [];
+                renderQAGrid();
+            }
+        });
+
+        renderQAGrid();
+    </script>
+</body>
+</html>
